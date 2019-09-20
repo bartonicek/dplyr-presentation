@@ -1,0 +1,412 @@
+---
+title: "dplyr presentation"
+author: "Adam Bartonicek"
+date: "17/09/2019"
+output: ioslides_presentation
+editor_options: 
+  chunk_output_type: console
+---
+
+<style>
+.forceBreak { -webkit-column-break-after: always; break-after: column; }
+</style>
+
+
+```{r setup, echo = FALSE, message = FALSE}
+
+library(tidyverse)
+
+my_data <- tibble(ID = 1:1000, gender = sample(rep(c('male', 'female'), 500)),
+                  age = round(rnorm(1000, 20, 2)), 
+                  smoker = sample(rep(c(TRUE, FALSE), c(120, 880))),
+                  religion = sample(rep(c('Hindu', 'Buddhist', 'Christian',
+                                          'Muslim', 'Atheist'), 
+                                        c(60, 90, 300, 150, 400))),
+                  cesd1 = round(rnorm(1000, 5, 1)),
+                  cesd2 = round(rnorm(1000, 6, 2))) %>%
+  mutate(day1_score = round(100 + 30 * smoker + rnorm(1000, 0, 30), digits = 2),
+         day2_score = round(120 + 50 * smoker + rnorm(1000, 0, 30), digits = 2))
+```
+
+# Untidy data
+
+## Working with data
+
+- When working with data, there are often multiple ways to store the exact same information
+- For example, we can sometimes store data in what is called "wide" or "long" format
+
+## Example {.columns-2}
+
+```{r messy_data_example1, echo = FALSE}
+
+df1 <- tibble(participant = c('Keeanu Reeves', 'Leonardo DiCaprio'), day1 = rnorm(2, 100, 20), day2 = rnorm(2, 100, 20))
+df2 <- df1 %>% gather(key = 'day', value = 'score', day1:day2) %>%
+  mutate(day = str_extract(day, '\\d'))
+
+df1 %>% knitr::kable()
+```
+
+<p class="forceBreak"></p>
+
+```{r messy_data_example2, echo = FALSE}
+
+df2 %>% knitr::kable()
+
+```
+
+## The Headache {.columns-2}
+
+- Often we collect/store data in one format, but the analysis software wants a different format
+- Software can be inconsistent in which data shape it prefers, e.g. SPSS requires the data in wide format for repeated measures ANOVA but long format for regression
+- Manually reshaping data e.g. by copy-pasting columns in Excel takes a long time and is error-prone
+
+<p class="forceBreak"></p>
+
+```{r headache_meme, echo = FALSE, out.width= "300 px", fig.align='center'}
+
+knitr::include_graphics('pictures/headache.jpg')
+
+```
+
+## Other data problems
+
+- Sometimes we have other problems with our data
+- For example, we may have some incorrect/duplicated observations, redundant variables, and missing values
+- These are usually less difficult to deal with in traditional software, but can also be a pain
+
+# Tidy data
+
+## What is tidy data?
+
+```{r kondo_meme, echo = FALSE, out.width= "450 px", fig.align='center'}
+
+knitr::include_graphics('pictures/kondo.png')
+
+```
+
+- Tidy data is a concept developed by Hadley Wickham
+- The goal of tidy data is to have one data format which is simple, easy to work with, and can be used for any analysis
+
+## The definition of tidy data
+
+- Tidy data is data in which:
+  - Each variable has its own column
+  - Each observation has its own row
+  - Each value has its own cell
+
+## Another way to think about tidy data
+
+- Observational unit is whatever we measure (e.g. subjects, cases, trials, schools, etc...)
+- Each observational unit has *ALL* the IVs and the DV that we're interested in
+- If we measure a subject repeatedly (e.g. in repeated measure design, over time or in different conditions), then each measure is an observational unit . In other words, each unique value of the DV should be its own observational unit
+- You know your data is tidy when each row of your data is exactly one observational unit, each column is either IV or DV (or some auxilary variable, e.g. ID), and the DV is in a single column
+
+## Which dataset is tidy? {.columns-2}
+
+```{r messy_data_example3, echo = FALSE}
+
+##Depends on the DV
+
+df1 <- tibble(participant = c('Keeanu Reeves', 'Leonardo DiCaprio'), day1 = rnorm(2, 100, 20), day2 = rnorm(2, 100, 20))
+df2 <- df1 %>% gather(key = 'day', value = 'score', day1:day2) %>%
+  mutate(day = str_extract(day, '\\d'))
+
+df1 %>% knitr::kable()
+
+```
+
+<p class="forceBreak"></p>
+
+```{r messy_data_example4, echo = FALSE}
+
+df2 %>% knitr::kable()
+
+```
+
+# `dplyr`
+
+## What is `dplyr`?
+
+- `dplyr` is an R package developed by Hadley Wickham
+- `dplyr` provides a set of verbs for manipulating dataframes:
+  - `select`: select or drop variables
+  - `filter`: filter observations based on conditions
+  - `arrange` : order observations by values in variables
+  - `mutate`: modify existing variables or create new ones
+  - `gather` : gather a variable that is spread across multiple columns
+  - `spread` : spread mutliple variables that are squeezed in one column
+  - `group_by` and `summarize`: create cross-tabulations using variables
+
+## The pipe `%>%`
+
+- The pipe ("`%>%`") is a special thing that makes R great
+- R is a functional programming language, meaning that we pass objects onto functions to make things happen. For example, if we run the code `mean(c(1, 3, 5, 7)`, we take the mean of the numbers 1, 3, 5, and 7 (= 4)
+- Pipe allows us to invert the relationship, which makes for a more readable code:
+
+``` {r pipe}
+
+c(1, 3, 5, 7) %>% # First, take a list of number 1, 3, 5, 7, THEN
+  mean() # Take its mean
+
+```
+
+- Pipe makes the code much more readable for humans!
+
+## `select` {.columns-2}
+
+- sometimes, not all of the variables in a dataset are useful to us, or we want to create a dataset with only a subset of the variables
+- `select` is a versatile verb that we can use to easily select only the variables that we're interested in
+
+<p class="forceBreak"></p>
+
+```{r select_meme, echo = FALSE, out.width= "300 px", fig.align='center'}
+
+knitr::include_graphics('pictures/select.jpg')
+
+```
+
+## Select 3 variables
+
+- For example, if are were only interested in the `ID`, `age` and `smoker` variables:
+
+```{r select_two}
+
+my_data %>%
+  select(ID, age, smoker) %>%
+  knitr::kable()
+
+```
+
+## Dropping variables
+
+- If we want to drop a variable from a dataset, we simple add the "`-`". For example, if we want to drop the ID variable:
+
+```{r select_drop}
+
+my_data %>%
+  select(- ID) %>%
+  knitr::kable()
+
+```
+
+## Selecting or dropping multiple adjacent variables
+
+- If we want to select or drop variables X, Y, and all variables between them, we can use the "`:`"
+
+``` {r select_adjacent}
+
+my_data %>%
+  select(age:cesd1) %>%
+  knitr::kable()
+
+```
+
+## Matches, startswith, endswith
+
+- We can use the handy `matches()`, `starts_with()`, and `ends_with()` functions to easily select variables that share a feature in their variable name
+- To select ID and all variables that start with "cesd":
+
+``` {r matches}
+
+my_data %>%
+  select(ID, starts_with('cesd')) %>%
+  knitr::kable()
+
+```
+
+## `select_if`
+
+- There are several modified version of the select verb that can come in handy sometimes 
+- `select_if` is a particularly useful version of the select verb that selects only the variables that match a condition
+- For example, to select only numeric variables:
+
+```{r select_if}
+
+my_data %>%
+  select_if(is.numeric) %>%
+  knitr::kable()
+
+```
+
+## `filter` {.columns-2}
+
+- The `filter` verb can be used to keep observations that fulfill a specific condition
+- `filter` takes in a data frame and a condition that is defined by a variable
+
+<p class="forceBreak"></p>
+
+```{r filter_meme, echo = FALSE, out.width= "300 px", fig.align='center'}
+
+knitr::include_graphics('pictures/filter.jpg')
+
+```
+
+## Filter observations greater than
+
+- For example, if we want to filter for participants older than 20:
+
+```{r filter_greater}
+
+my_data %>%
+  filter(age > 20) %>%
+  knitr::kable()
+
+```
+
+## Logical operators & `filter`
+
+- The conditions of `filter` are defined by logical operators
+- The most commonly used operators are pretty self-explanatory: "`>`" (greater), "`<`" (smaller), "`>=`" (greater or equal to), "`<=`" (smaller or equal to)
+- If we want to test for exact equivalence, we need to use the "`==`" operator (one "`=`" throws an  error!)
+- Whereas "`>`", "`>`", "`>=`", "`<=`" work with numeric & integer values only, "`==`" works with any data type (numeric, integer, character, factor, logical, etc...)
+
+## Filter observations equal to
+
+- For example, if we want to filter for male participants only:
+
+```{r filter_equivalence}
+
+my_data %>%
+  filter(gender == 'male') %>%
+  knitr::kable()
+
+```
+
+## !negation
+
+- We can negate an equivalence statement with "`!=`"
+
+```{r filter_negate}
+
+my_data %>%
+  filter(religion != 'Atheist') %>%
+  knitr::kable()
+
+```
+
+## Complex conditions
+
+- We can create complex conditions through propositional logic, using operators such as: "`&`" (AND), "`|`" (OR)
+- For "`&`", both conditions need to evaluate to true, for "`|`" only one condition is enough
+
+## Filter equal to AND equal to
+
+- For example, to filter for all female smokers:
+
+```{r filter_complex_a}
+
+my_data %>%
+  filter(gender == 'female' & smoker == 'TRUE') %>% 
+  knitr::kable()
+
+```
+
+## Filter less than OR greater than
+
+- To filter all participants either younger than 16 or older than 24:
+
+```{r filter_complex_b}
+
+my_data %>%
+  filter(age < 16 | age > 24) %>%
+  knitr::kable()
+
+```
+
+## `mutate`
+
+- `mutate` is a really powerful verb that let's you modify existing variables or add new ones
+- (I was looking up teenage mutant ninja turtles & couldn't help but to grab this one)
+
+```{r mutate_meme, echo = FALSE, out.width= "300 px", fig.align='center'}
+
+knitr::include_graphics('pictures/mutate.jpg')
+
+```
+
+## Averaging variables
+
+- One popular use of mutate is to average variables:
+
+``` {r average_vars}
+
+my_data %>%
+  mutate(avg_cesd = (cesd1 + cesd2) / 2) %>%
+  select(matches('cesd')) %>%
+  knitr::kable()
+
+```
+
+## Transforming variables
+
+- Another good use of mutate is to transform variables (z-score, apply log transformation, etc)
+- For example:
+
+``` {r zscore_log, warning = FALSE}
+
+my_data %>%
+  mutate(day1_zscore = scale(day1_score), 
+         day2_logscore = log(day2_score)) %>%
+  select(starts_with('day')) %>%
+  knitr::kable()
+
+```
+
+
+## `gather`
+
+```{r gather_meme, echo = FALSE, out.width= "350 px", fig.align='center'}
+
+knitr::include_graphics('pictures/gather.jpg')
+
+```
+
+- `gather` becomes very useful when we are dealing with a variable that's spread across multiple columns (usually because it's conditioned on another variable)
+- Put differently, `gather` is used to convert wide dataframes into long dataframes
+- `gather` is a bit more complicated than `select` and `filter` and requires three arguments: "key", "value", and all the columns we want to gather
+
+## Gathering a variable
+
+- In our data set, we see there that "day1_score" and "day2_score" scores are each a separate variable. However, if we think about it, "score" is actually just one variable and "day" is another.
+- `gather` to the rescue!
+
+``` {r gather}
+
+my_data %>%
+  gather(key = "day", value = "score", day1_score:day2_score) %>%
+  knitr::kable()
+
+```
+
+## Converting the day variable
+
+- Converting the "day" variable to a proper numeric variable requires an additional tool, but it's very possible:
+
+``` {r converting_day}
+
+my_data %>%
+  gather(key = "day", value = "score", day1_score:day2_score) %>%
+  mutate(day = str_extract(day, "\\d")) %>%
+  knitr::kable()
+
+```
+
+## `spread`
+
+```{r spread_meme, echo = FALSE, out.width= "350 px", fig.align='center'}
+
+knitr::include_graphics('pictures/spread.jpg')
+
+```
+
+- `spread` is the opposite of `gather`
+- We use spread when we have a bunch of variables squeezed into one column
+
+``` {r spread}
+
+my_data %>%
+  gather(key = "day", value = "score", day1_score:day2_score) %>%
+  spread(key = 'day', value = 'score') %>%
+  knitr::kable()
+
+```
